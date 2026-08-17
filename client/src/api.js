@@ -32,3 +32,5 @@ export const api = {
   put: (path, data) => request(path, { method: 'PUT', body: JSON.stringify(data) }),
   patch: (path, data) => request(path, { method: 'PATCH', body: JSON.stringify(data) }),
 };
+
+export const productEventsUrl = `${API_URL}/api/product-events`;

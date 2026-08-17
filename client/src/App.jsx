@@ -14,9 +14,9 @@ const Settings = lazy(() => import('./pages/Settings'));
 export default function App() {
   return (
     <Router>
-      <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
+      <div className="min-h-screen bg-slate-50 font-sans text-slate-900 lg:flex">
         <Sidebar />
-        <div className="flex-1 overflow-y-auto">
+        <div className="min-w-0 flex-1 overflow-y-auto">
           <Suspense fallback={<div className="min-h-full grid place-items-center text-sm font-semibold text-slate-400">Loading workspace…</div>}>
             <Routes>
               <Route path="/" element={<Dashboard />} />

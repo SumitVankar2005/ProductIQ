@@ -6,6 +6,7 @@ import GroundTruth from '../models/GroundTruth.js';
 import EvalRun from '../models/EvalRun.js';
 import { analyzeProduct } from '../services/geminiService.js';
 import { calculateProductScore, aggregateScores } from '../services/scoringEngine.js';
+import productEvents, { publishProductUpdate } from '../services/productEvents.js';
 
 const router = express.Router();
 
@@ -15,6 +16,25 @@ const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, ne
 
 // -------------------- Health --------------------
 router.get('/health', (req, res) => res.json({ ok: true }));
+
+// Server-Sent Events keep open product lists in sync while Gemini works.
+// EventSource reconnects automatically if the network briefly drops.
+router.get('/product-events', (req, res) => {
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+  });
+  res.flushHeaders();
+  res.write(': connected\n\n');
+  const onUpdate = (product) => res.write(`event: product\ndata: ${JSON.stringify(product)}\n\n`);
+  productEvents.on('product:update', onUpdate);
+  const heartbeat = setInterval(() => res.write(': keep-alive\n\n'), 25000);
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    productEvents.off('product:update', onUpdate);
+  });
+});
 
 // -------------------- Dashboard --------------------
 router.get(
@@ -92,6 +112,7 @@ router.patch(
       { new: true }
     );
     if (!product) return res.status(404).json({ error: 'Product not found' });
+    publishProductUpdate(product);
     res.json(product);
   })
 );
@@ -105,6 +126,7 @@ router.patch(
       { new: true }
     );
     if (!product) return res.status(404).json({ error: 'Product not found' });
+    publishProductUpdate(product);
     res.json(product);
   })
 );
@@ -119,7 +141,26 @@ router.put(
     if (status) update.status = status;
     const product = await Product.findByIdAndUpdate(req.params.id, update, { new: true });
     if (!product) return res.status(404).json({ error: 'Product not found' });
+    publishProductUpdate(product);
     res.json(product);
+  })
+);
+
+// Add a single product without preparing a CSV. This is useful for testing
+// an AI prediction with a product pasted from a supplier catalogue.
+router.post(
+  '/products',
+  asyncHandler(async (req, res) => {
+    const { mfgPartNum = '', partDesc = '', partManuf = '', brand = '' } = req.body || {};
+    if (!mfgPartNum.trim() && !partDesc.trim()) {
+      return res.status(400).json({ error: 'Enter a part number or product description' });
+    }
+    const product = await Product.create({
+      rawInput: { mfgPartNum: mfgPartNum.trim(), partDesc: partDesc.trim(), partManuf: partManuf.trim(), brand: brand.trim() },
+      status: 'RAW',
+    });
+    publishProductUpdate(product);
+    res.status(201).json(product);
   })
 );
 
@@ -149,6 +190,7 @@ router.post(
     }
 
     const inserted = await Product.insertMany(productDocs);
+    inserted.forEach(publishProductUpdate);
     res.json({ success: true, count: inserted.length });
   })
 );
@@ -191,6 +233,7 @@ router.post(
       );
       if (!product) break;
       processed++;
+      publishProductUpdate(product);
 
       try {
         const { intelligence, aiConfidenceScore } = await analyzeProduct(product.rawInput);
@@ -214,6 +257,7 @@ router.post(
       }
 
       await product.save();
+      publishProductUpdate(product);
 
       // Throttle between requests (not after the last one) to stay under quota.
       if (i < itemsToAttempt - 1) {

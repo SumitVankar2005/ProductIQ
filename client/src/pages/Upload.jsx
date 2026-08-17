@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { UploadCloud, FileType, CheckCircle2, AlertCircle, Target } from 'lucide-react';
+import { UploadCloud, FileType, CheckCircle2, AlertCircle, Target, Plus, Sparkles } from 'lucide-react';
 import Papa from 'papaparse';
 import { api } from '../api';
 
-function UploadCard({ title, description, icon, onFile, successMessage }) {
+function UploadCard({ title, description, icon, onFile, onPreview }) {
   const [status, setStatus] = useState('idle'); // idle, uploading, success, error
   const [message, setMessage] = useState('');
 
@@ -14,6 +14,7 @@ function UploadCard({ title, description, icon, onFile, successMessage }) {
     setMessage('');
 
     try {
+      await onPreview?.(file);
       const result = await onFile(file);
       setMessage(result);
       setStatus('success');
@@ -80,18 +81,38 @@ const parseCsv = (file) =>
   });
 
 export default function Upload() {
+  const [preview, setPreview] = useState(null);
+  const [quickProduct, setQuickProduct] = useState({ mfgPartNum: '', partDesc: '', partManuf: '', brand: '' });
+  const [quickStatus, setQuickStatus] = useState({ loading: false, message: '', error: false });
+
+  const submitQuickProduct = async (event) => {
+    event.preventDefault();
+    setQuickStatus({ loading: true, message: '', error: false });
+    try {
+      await api.post('/api/products', quickProduct);
+      setQuickProduct({ mfgPartNum: '', partDesc: '', partManuf: '', brand: '' });
+      setQuickStatus({ loading: false, message: 'Product added to the processing queue. Open Dashboard to run AI.', error: false });
+    } catch (error) {
+      setQuickStatus({ loading: false, message: error.message, error: true });
+    }
+  };
+
   return (
-    <div className="p-8 max-w-[1400px] mx-auto space-y-6">
+    <div className="p-5 sm:p-8 max-w-[1400px] mx-auto space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-slate-900">Upload Data</h1>
-        <p className="text-slate-500 mt-1">Import raw catalog files, or expected-output ground truth for AI evaluation.</p>
+        <p className="text-slate-500 mt-1">Start with a CSV for many products, or paste one product below to test an AI prediction immediately.</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-8 mt-8">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mt-8">
         <UploadCard
           title="Raw Catalog Data (CSV)"
-          description="e.g. Unihack_ Sample Dataset - Input.csv"
+          description="Required: Mfg_Part_Num or Part_Desc. Optional: Part_Manuf and Brand. We preview the first rows before saving."
           icon={<FileType className="text-blue-600" size={24} />}
+          onPreview={async (file) => {
+            const rows = await parseCsv(file);
+            setPreview({ name: file.name, count: rows.length, headers: Object.keys(rows[0] || {}), rows: rows.slice(0, 4) });
+          }}
           onFile={async (file) => {
             const rows = await parseCsv(file);
             const result = await api.post('/api/upload', { data: rows });
@@ -110,6 +131,25 @@ export default function Upload() {
           }}
         />
       </div>
+
+      {preview && (
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-1 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-bold text-slate-900">Dataset preview</h2><p className="text-xs text-slate-500">{preview.name} · {preview.count} usable rows · first 4 shown</p></div><span className="text-xs font-semibold text-emerald-700">Ready for AI processing</span></div>
+          <div className="overflow-x-auto"><table className="min-w-full text-left text-xs"><thead className="bg-slate-50 text-slate-500"><tr>{preview.headers.map((header) => <th className="whitespace-nowrap px-4 py-3 font-bold" key={header}>{header}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{preview.rows.map((row, index) => <tr key={index}>{preview.headers.map((header) => <td key={header} className="max-w-64 truncate px-4 py-3 text-slate-700">{row[header] || '—'}</td>)}</tr>)}</tbody></table></div>
+        </section>
+      )}
+
+      <section className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-5 sm:p-7">
+        <div className="mb-5 flex items-start gap-3"><span className="rounded-xl bg-indigo-600 p-2 text-white"><Sparkles size={18} /></span><div><h2 className="font-bold text-slate-900">Try one product</h2><p className="text-sm text-slate-500">Add a single product without a CSV. It joins the queue and its results will populate live in Products.</p></div></div>
+        <form onSubmit={submitQuickProduct} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <input value={quickProduct.mfgPartNum} onChange={(e) => setQuickProduct({ ...quickProduct, mfgPartNum: e.target.value })} placeholder="Part number (e.g. DWE402)" className="rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm" />
+          <input value={quickProduct.partManuf} onChange={(e) => setQuickProduct({ ...quickProduct, partManuf: e.target.value })} placeholder="Manufacturer (optional)" className="rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm" />
+          <input value={quickProduct.partDesc} onChange={(e) => setQuickProduct({ ...quickProduct, partDesc: e.target.value })} placeholder="Product description" className="rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm sm:col-span-2" />
+          <input value={quickProduct.brand} onChange={(e) => setQuickProduct({ ...quickProduct, brand: e.target.value })} placeholder="Brand (optional)" className="rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm" />
+          <button disabled={quickStatus.loading} className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-60"><Plus size={16} />{quickStatus.loading ? 'Adding…' : 'Add to queue'}</button>
+        </form>
+        {quickStatus.message && <p className={`mt-3 text-sm ${quickStatus.error ? 'text-red-600' : 'text-emerald-700'}`}>{quickStatus.message}</p>}
+      </section>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Search, Eye, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import ProductComparison from '../components/ProductComparison';
-import { api } from '../api';
+import { api, productEventsUrl } from '../api';
 
 const STATUS_STYLES = {
   RAW: 'bg-slate-100 text-slate-600',
@@ -40,14 +40,30 @@ export default function Products() {
     fetchProducts();
   }, [fetchProducts]);
 
+  useEffect(() => {
+    const stream = new EventSource(productEventsUrl);
+    stream.addEventListener('product', (event) => {
+      const updated = JSON.parse(event.data);
+      setProducts((current) => {
+        const position = current.findIndex((product) => product._id === updated._id);
+        if (position === -1) return current;
+        const next = [...current];
+        next[position] = updated;
+        return next;
+      });
+      setSelectedProduct((current) => current?._id === updated._id ? updated : current);
+    });
+    return () => stream.close();
+  }, []);
+
   const handleSearchChange = (value) => {
     setSearch(value);
     setPage(1);
   };
 
   return (
-    <div className="p-8 max-w-[1400px] mx-auto space-y-6">
-      <h1 className="text-3xl font-bold text-slate-900">Products Database</h1>
+    <div className="p-5 sm:p-8 max-w-[1400px] mx-auto space-y-6">
+      <div><h1 className="text-3xl font-bold text-slate-900">Products Database</h1><p className="mt-1 text-sm text-slate-500">AI results appear in this list as each product is processed.</p></div>
 
       {error && (
         <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-4">
@@ -70,7 +86,7 @@ export default function Products() {
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-200 bg-slate-50/50">
-          <div className="relative w-96">
+          <div className="relative w-full sm:w-96">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={18} />
             <input
               type="text"
@@ -82,11 +98,14 @@ export default function Products() {
           </div>
         </div>
 
-        <table className="w-full text-left text-sm">
+        <div className="overflow-x-auto"><table className="min-w-[900px] w-full text-left text-sm">
           <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase text-xs">
             <tr>
               <th className="px-6 py-4">MPN / Desc</th>
               <th className="px-6 py-4">Status</th>
+              <th className="px-6 py-4">AI manufacturer</th>
+              <th className="px-6 py-4">Category</th>
+              <th className="px-6 py-4">Confidence</th>
               <th className="px-6 py-4 text-right">Actions</th>
             </tr>
           </thead>
@@ -97,6 +116,9 @@ export default function Products() {
                   <div className="font-bold">{p.rawInput?.mfgPartNum || 'N/A'}</div>
                   <div className="text-xs text-slate-500 truncate max-w-md">{p.rawInput?.partDesc}</div>
                 </td>
+                <td className="px-6 py-4 font-medium text-slate-700">{p.intelligence?.manufacturer?.value || <span className="text-slate-400">Waiting for AI</span>}</td>
+                <td className="px-6 py-4 text-slate-600">{p.intelligence?.classification?.fine || p.intelligence?.classification?.class || <span className="text-slate-400">—</span>}</td>
+                <td className="px-6 py-4">{typeof p.aiConfidenceScore === 'number' ? <span className="rounded-full bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700">{p.aiConfidenceScore}%</span> : <span className="text-slate-400">—</span>}</td>
                 <td className="px-6 py-4">
                   <span className={`px-2 py-1 rounded text-xs font-bold ${STATUS_STYLES[p.status] || STATUS_STYLES.RAW}`}>
                     {p.status}
@@ -114,20 +136,20 @@ export default function Products() {
             ))}
             {!loading && products.length === 0 && (
               <tr>
-                <td colSpan="3" className="text-center py-8 text-slate-500">
+                <td colSpan="6" className="text-center py-8 text-slate-500">
                   No products found. Upload some data first!
                 </td>
               </tr>
             )}
             {loading && (
               <tr>
-                <td colSpan="3" className="text-center py-8 text-slate-400">
+                <td colSpan="6" className="text-center py-8 text-slate-400">
                   Loading...
                 </td>
               </tr>
             )}
           </tbody>
-        </table>
+        </table></div>
 
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 bg-slate-50/50">

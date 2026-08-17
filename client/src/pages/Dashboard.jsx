@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AlertCircle, ArrowUpRight, Clock3, Layers3, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { api } from '../api';
+import { api, productEventsUrl } from '../api';
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -18,6 +18,17 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchStats();
+    const stream = new EventSource(productEventsUrl);
+    let refreshTimer;
+    stream.addEventListener('product', () => {
+      // Coalesce several status changes into one small stats request.
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(fetchStats, 150);
+    });
+    return () => {
+      clearTimeout(refreshTimer);
+      stream.close();
+    };
   }, []);
 
   const fetchStats = async () => {
@@ -85,7 +96,7 @@ export default function Dashboard() {
             <Sparkles size={17} /> {isProcessing ? 'Processing queue…' : `Process ${stats.pending} pending record${stats.pending === 1 ? '' : 's'}`}
           </button>
           {isProcessing && (
-            <p className="text-xs text-cyan-100 mt-3">{progress?.done || 0} of {progress?.total || 0} completed — safely processing in small batches.</p>
+            <p className="text-xs text-cyan-100 mt-3" aria-live="polite">{progress?.done || 0} of {progress?.total || 0} completed — results appear live in Products.</p>
           )}
         </div>
         </div>
@@ -111,6 +122,9 @@ export default function Dashboard() {
       <div className="bg-white rounded-2xl border border-slate-200 p-6 flex flex-col sm:flex-row gap-5 justify-between items-start">
         <div><h2 className="font-bold text-slate-900">Pipeline health</h2><p className="text-sm text-slate-500 mt-1">{stats.autoApproved} auto-approved · {stats.needsReview} awaiting review · {stats.highRisk} high-risk</p></div>
         <Link to="/reviews" className="inline-flex items-center gap-2 text-sm font-bold text-indigo-600 hover:text-indigo-800">Open review queue <ArrowUpRight size={16} /></Link>
+      </div>
+      <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 px-5 py-4 text-sm text-slate-600">
+        <span className="font-bold text-indigo-950">Ready to test a product?</span> Add a CSV or paste one product in <Link to="/upload" className="font-bold text-indigo-600 underline">Upload Data</Link>, then process it here. AI values and confidence update live in the Products table.
       </div>
     </div>
   );
