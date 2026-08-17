@@ -34,3 +34,13 @@ export const api = {
 };
 
 export const productEventsUrl = `${API_URL}/api/product-events`;
+
+export const getBrowserSessionId = () => {
+  const key = 'productiq-browser-session';
+  let id = sessionStorage.getItem(key);
+  if (!id) {
+    id = crypto.randomUUID();
+    sessionStorage.setItem(key, id);
+  }
+  return id;
+};

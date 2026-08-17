@@ -10,4 +10,6 @@ export const publishProductUpdate = (product) => {
   productEvents.emit('product:update', product.toObject ? product.toObject() : product);
 };
 
+export const publishQueueUpdate = (queue) => productEvents.emit('queue:update', queue);
+
 export default productEvents;

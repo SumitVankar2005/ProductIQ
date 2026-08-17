@@ -7,6 +7,7 @@ import EvalRun from '../models/EvalRun.js';
 import { analyzeProduct } from '../services/geminiService.js';
 import { calculateProductScore, aggregateScores } from '../services/scoringEngine.js';
 import productEvents, { publishProductUpdate } from '../services/productEvents.js';
+import { getQueueStatus, heartbeat, startQueue } from '../services/processingQueue.js';
 
 const router = express.Router();
 
@@ -28,12 +29,26 @@ router.get('/product-events', (req, res) => {
   res.flushHeaders();
   res.write(': connected\n\n');
   const onUpdate = (product) => res.write(`event: product\ndata: ${JSON.stringify(product)}\n\n`);
+  const onQueueUpdate = (queue) => res.write(`event: queue\ndata: ${JSON.stringify(queue)}\n\n`);
   productEvents.on('product:update', onUpdate);
+  productEvents.on('queue:update', onQueueUpdate);
   const heartbeat = setInterval(() => res.write(': keep-alive\n\n'), 25000);
   req.on('close', () => {
     clearInterval(heartbeat);
     productEvents.off('product:update', onUpdate);
+    productEvents.off('queue:update', onQueueUpdate);
   });
+});
+
+router.get('/processing/status', (req, res) => res.json(getQueueStatus()));
+router.post('/processing/start', asyncHandler(async (req, res) => {
+  const sessionId = req.body?.sessionId;
+  if (!sessionId) return res.status(400).json({ error: 'Missing browser session' });
+  res.json(await startQueue(sessionId));
+}));
+router.post('/processing/heartbeat', (req, res) => {
+  if (req.body?.sessionId) heartbeat(req.body.sessionId);
+  res.status(204).end();
 });
 
 // -------------------- Dashboard --------------------

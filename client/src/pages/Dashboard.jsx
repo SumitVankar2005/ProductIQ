@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AlertCircle, ArrowUpRight, Clock3, Layers3, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { api, productEventsUrl } from '../api';
+import { api, getBrowserSessionId, productEventsUrl } from '../api';
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -17,26 +17,28 @@ export default function Dashboard() {
   const [progress, setProgress] = useState(null);
 
   useEffect(() => {
-    fetchStats();
+    const load = async () => {
+      await fetchStats();
+      try {
+        const queue = await api.get('/api/processing/status');
+        setIsProcessing(queue.active);
+        if (queue.total) setProgress(queue);
+      } catch (e) {
+        // Stats error already provides the useful connection message.
+      }
+    };
+    load();
     const stream = new EventSource(productEventsUrl);
     let refreshTimer;
-    stream.addEventListener('product', (event) => {
-      const product = JSON.parse(event.data);
-      // The API emits PROCESSING when it claims a row and a terminal event
-      // after Gemini has saved the result. Count the latter immediately so
-      // the progress text is not held back by the rate-limited batch reply.
-      if (['AUTO_APPROVED', 'NEEDS_REVIEW', 'HIGH_RISK'].includes(product.status)) {
-        setProgress((current) => current
-          ? {
-              ...current,
-              done: Math.min(current.total, current.done + 1),
-              failed: current.failed + (product.processingError ? 1 : 0),
-            }
-          : current);
-      }
+    stream.addEventListener('product', () => {
       // Coalesce several status changes into one small stats request.
       clearTimeout(refreshTimer);
       refreshTimer = setTimeout(fetchStats, 150);
+    });
+    stream.addEventListener('queue', (event) => {
+      const queue = JSON.parse(event.data);
+      setProgress(queue);
+      setIsProcessing(queue.active);
     });
     return () => {
       clearTimeout(refreshTimer);
@@ -55,31 +57,14 @@ export default function Dashboard() {
   };
 
   const startProcessing = async () => {
-    setIsProcessing(true);
     setError(null);
-    setProgress({ done: 0, total: stats.pending, failed: 0 });
     try {
-      let remaining = stats.pending;
-      let done = 0;
-      let failed = 0;
-      // Each request processes at most the server's safe batch size (3 by
-      // default). This supports 10, 100, or more rows without one timeout.
-      while (remaining > 0) {
-        const result = await api.post('/api/process-batch', { limit: 3 });
-        if (result.processed === 0) break;
-        done += result.processed;
-        failed += result.failed;
-        remaining = result.remaining;
-        setProgress({ done, total: stats.pending, failed });
-      }
-      await fetchStats();
-      if (failed > 0) {
-        setError(`Finished ${done} records, with ${failed} sent to review due to an AI error.`);
-      }
+      const queue = await api.post('/api/processing/start', { sessionId: getBrowserSessionId() });
+      setProgress(queue);
+      setIsProcessing(queue.active);
     } catch (e) {
       setError(e.message);
     }
-    setIsProcessing(false);
   };
 
   const cards = [
@@ -109,7 +94,7 @@ export default function Dashboard() {
             <Sparkles size={17} /> {isProcessing ? 'Processing queue…' : `Process ${stats.pending} pending record${stats.pending === 1 ? '' : 's'}`}
           </button>
           {isProcessing && (
-            <p className="text-xs text-cyan-100 mt-3" aria-live="polite">{progress?.done || 0} of {progress?.total || 0} completed — results appear live in Products.</p>
+            <p className="text-xs text-cyan-100 mt-3" aria-live="polite">{progress?.done || 0} of {progress?.total || 0} completed{progress?.paused ? ' — paused because the browser session ended.' : ' — you can safely open other pages.'}</p>
           )}
         </div>
         </div>

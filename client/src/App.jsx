@@ -1,6 +1,7 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
+import { api, getBrowserSessionId } from './api';
 
 // Load each workspace only when it is opened. This keeps the first dashboard
 // paint fast and moves the charting library out of the initial bundle.
@@ -12,6 +13,13 @@ const ReviewQueue = lazy(() => import('./pages/ReviewQueue'));
 const Settings = lazy(() => import('./pages/Settings'));
 
 export default function App() {
+  useEffect(() => {
+    const sessionId = getBrowserSessionId();
+    const sendHeartbeat = () => api.post('/api/processing/heartbeat', { sessionId }).catch(() => {});
+    sendHeartbeat();
+    const timer = setInterval(sendHeartbeat, 10000);
+    return () => clearInterval(timer);
+  }, []);
   return (
     <Router>
       <div className="min-h-screen bg-slate-50 font-sans text-slate-900 lg:flex">
