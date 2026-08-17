@@ -20,7 +20,20 @@ export default function Dashboard() {
     fetchStats();
     const stream = new EventSource(productEventsUrl);
     let refreshTimer;
-    stream.addEventListener('product', () => {
+    stream.addEventListener('product', (event) => {
+      const product = JSON.parse(event.data);
+      // The API emits PROCESSING when it claims a row and a terminal event
+      // after Gemini has saved the result. Count the latter immediately so
+      // the progress text is not held back by the rate-limited batch reply.
+      if (['AUTO_APPROVED', 'NEEDS_REVIEW', 'HIGH_RISK'].includes(product.status)) {
+        setProgress((current) => current
+          ? {
+              ...current,
+              done: Math.min(current.total, current.done + 1),
+              failed: current.failed + (product.processingError ? 1 : 0),
+            }
+          : current);
+      }
       // Coalesce several status changes into one small stats request.
       clearTimeout(refreshTimer);
       refreshTimer = setTimeout(fetchStats, 150);
@@ -120,7 +133,7 @@ export default function Dashboard() {
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 p-6 flex flex-col sm:flex-row gap-5 justify-between items-start">
-        <div><h2 className="font-bold text-slate-900">Pipeline health</h2><p className="text-sm text-slate-500 mt-1">{stats.autoApproved} auto-approved · {stats.needsReview} awaiting review · {stats.highRisk} high-risk</p></div>
+        <div><h2 className="font-bold text-slate-900">Pipeline health</h2><p className="text-sm text-slate-500 mt-1">{stats.autoApproved} auto-approved · {stats.needsReview} awaiting review · {stats.highRisk} high-risk{stats.processing > 0 ? ` · ${stats.processing} currently running` : ''}</p></div>
         <Link to="/reviews" className="inline-flex items-center gap-2 text-sm font-bold text-indigo-600 hover:text-indigo-800">Open review queue <ArrowUpRight size={16} /></Link>
       </div>
       <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 px-5 py-4 text-sm text-slate-600">
