@@ -1,0 +1,12 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body { background: #f7f8fc; color: #0f172a; font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif; }
+* { box-sizing: border-box; }
+button, a, input { -webkit-tap-highlight-color: transparent; }
+.hero-grid { background: radial-gradient(circle at 84% 12%, rgba(34,211,238,.28), transparent 27%), radial-gradient(circle at 15% 110%, rgba(99,102,241,.42), transparent 40%), #0b1534; }
+.metric-card { box-shadow: 0 10px 30px -20px rgba(15, 23, 42, .35); transition: transform .2s ease, box-shadow .2s ease; }
+.metric-card:hover { transform: translateY(-3px); box-shadow: 0 16px 32px -20px rgba(15, 23, 42, .35); }
